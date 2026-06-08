@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+monai==1.5.2
+torch==2.12.0
+torchvision==0.27.0
+numpy==2.4.6
+matplotlib
+requests
+nibabel
+itk
+tensorboard
