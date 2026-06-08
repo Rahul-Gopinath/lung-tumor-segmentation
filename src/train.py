@@ -1,97 +1,37 @@
-import os
 from datetime import datetime
 import gc
+import matplotlib.pyplot as plt
+import os
 import yaml
+
 import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-import matplotlib.pyplot as plt
-from monai.apps import DecathlonDataset
-from monai.data import CacheDataset, DataLoader, decollate_batch
+
+from monai.data import DataLoader, decollate_batch
 from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
-from monai.networks.nets import UNet
-from monai.transforms import (
-    Compose, 
-    LoadImaged, 
-    EnsureChannelFirstd, 
-    NormalizeIntensityd, 
-    Spacingd,
-    RandRotated,
-    RandFlipd,
-    RandCropByPosNegLabeld, 
-    AsDiscrete
-)
 from monai.inferers import sliding_window_inference
 
-def main():
+from model import *
+from data_utils import *
+
+
+def train(config, device, model_dir, writer):
+
     print("Train start")
 
-    with open("config/config.yaml", "r") as f:
-        config = yaml.safe_load(f)
+    train_transforms = define_train_transform(config)
+    val_transforms = define_val_transform()
 
-    device = torch.device(config["device"] if torch.cuda.is_available() else "cpu")
-    print(f"Using training device: {device}")
-
-    data_dir = config["paths"]["data_dir"]
-    model_dir = config["paths"]["model_dir"]
-    os.makedirs(model_dir, exist_ok=True)
-    
-    train_transforms = Compose([
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys=["image", "label"]),
-        NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
-        Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=["bilinear", "nearest"]),
-        RandRotated(keys=["image", "label"], range_x=config["transforms"]["rotation_range_degrees"], range_y=config["transforms"]["rotation_range_degrees"], range_z=config["transforms"]["rotation_range_degrees"], prob=config["transforms"]["rotation_prob"], mode=["bilinear", "nearest"]),
-        RandFlipd(keys=["image", "label"], spatial_axis=[0, 1, 2], prob=config["transforms"]["flip_prob"]),
-        # Crops a clean 64x64x64 patch centered around positive (tumor) or negative tissue
-        RandCropByPosNegLabeld(
-            keys=["image", "label"], 
-            label_key="label", 
-            spatial_size=tuple(config["transforms"]["spatial_size"]), 
-            pos=config["transforms"]["pos_sample_ratio"], 
-            neg=config["transforms"]["neg_sample_ratio"], 
-            num_samples=config["transforms"]["num_samples_per_volume"] # Better try higher values for this reason - By increasing num_samples,
-                        # you are extracting maximum value out of a single disk-read operation, 
-                        # drastically reducing data loading bottlenecks.
-        )
-    ])
-
-    val_transforms = Compose([
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys=["image", "label"]),
-        NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
-        Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=["bilinear", "nearest"])])
-
-    train_dataset = CacheDataset(
-        data=DecathlonDataset(root_dir=data_dir, task=config["data"]["task"], section="training", download=False).data,
-        transform=train_transforms,
-        cache_rate=config["data"]["cache_rate"], # Cache 100% of the training set in system RAM
-        num_workers=config["data"]["num_workers_train"]
-    )
+    train_dataset = get_train_dataset(config, train_transforms)
+    val_dataset = get_val_dataset(config, val_transforms)
 
     train_dataloader = DataLoader(train_dataset, batch_size=1, num_workers=0, shuffle=True)
-
-    val_dataset = CacheDataset(
-        data=DecathlonDataset(root_dir=data_dir, task=config["data"]["task"], section="validation", download=False).data,
-        transform=val_transforms,
-        cache_rate=config["data"]["cache_rate"],  # Cache 100% of validation scans in RAM
-        num_workers=config["data"]["num_workers_val"]
-    )
     val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=0)
 
-    # TensorBoard Logging Setup
-    folder_id = "%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"))
-    writer = SummaryWriter(log_dir=os.path.join(config["paths"]["log_dir"], folder_id))
-
-    model = UNet(spatial_dims=config["model"]["spatial_dims"],
-                 in_channels=config["model"]["in_channels"],
-                 out_channels=config["model"]["out_channels"],
-                 channels=tuple(config["model"]["channels"]),
-                 strides=tuple(config["model"]["strides"]),
-                 num_res_units=config["model"]["num_res_units"]).to(device)
+    model = get_model(config, device)
 
     max_epochs = config["training"]["max_epochs"]
     loss_function = DiceCELoss(to_onehot_y=True, softmax=True, include_background=False)
@@ -169,6 +109,29 @@ def main():
 
     print(f"\nTraining Complete! Best Mean Dice: {best_metric:.4f} achieved at Epoch {best_metric_epoch}")
     writer.close()
+
+
+def main():
+
+    current_file_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_file_dir)
+
+    config_path = os.path.join(project_root, "config", "config.yaml")
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    device = torch.device(config["device"] if torch.cuda.is_available() else "cpu")
+    print(f"Using training device: {device}")
+
+    model_dir = os.path.join(project_root, config["paths"]["model_dir"])
+    os.makedirs(model_dir, exist_ok=True)
+
+    # TensorBoard Logging Setup
+    folder_id = "%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"))
+    writer = SummaryWriter(log_dir=os.path.join(project_root, config["paths"]["log_dir"], folder_id))
+
+    train(config, device, model_dir, writer)
     
 
 

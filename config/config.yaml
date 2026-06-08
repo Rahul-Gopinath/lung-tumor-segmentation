@@ -6,6 +6,7 @@ paths:
   data_dir: "./data"
   model_dir: "./models"
   log_dir: "./runs/lung_tumor_experiment"
+  output_dir: "./visualizations"
 
 # Dataset and Transform Configurations
 data:

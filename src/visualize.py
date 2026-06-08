@@ -1,53 +1,38 @@
-import os
-import torch
-import numpy as np
 import matplotlib.pyplot as plt
-from monai.apps import DecathlonDataset
-from monai.data import CacheDataset, DataLoader
-from monai.networks.nets import UNet
+import numpy as np
+import os
+import yaml
+import torch
+
+from monai.data import DataLoader
 from monai.inferers import sliding_window_inference
-from monai.transforms import (
-    Compose, 
-    LoadImaged, 
-    EnsureChannelFirstd, 
-    NormalizeIntensityd, 
-    Spacingd
-)
+
+from model import *
+from data_utils import *
 
 def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    data_dir = "./data"
-    model_path = "./models/best_metric_model.pth"
-    output_dir = "./visualizations"
+
+    current_file_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_file_dir)
+
+    config_path = os.path.join(project_root, "config", "config.yaml")
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+    
+    device = torch.device(config["device"] if torch.cuda.is_available() else "cpu")
+    model_path = os.path.join(project_root, config["paths"]["model_dir"], "best_metric_model.pth")
+    output_dir = os.path.join(project_root, config["paths"]["output_dir"])
+
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Loading evaluation pipeline on device: {device}")
 
-    # 1. Define identical validation transforms
-    val_transforms = Compose([
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys=["image", "label"]),
-        NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
-        Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=["bilinear", "nearest"])
-    ])
-
-    # 2. Grab the validation dataset split
-    val_dataset = CacheDataset(
-        data=DecathlonDataset(root_dir=data_dir, task="Task06_Lung", section="validation", download=False).data,
-        transform=val_transforms,
-        cache_rate=0.0, # No need to cache in RAM for a quick visualization run
-    )
+    val_transforms = define_val_transform()
+    val_dataset = get_val_dataset(config, val_transforms)
     val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=0, shuffle=True)
 
-    # 3. Initialize Model Architecture matching train.py
-    model = UNet(
-        spatial_dims=3,
-        in_channels=1,
-        out_channels=2,
-        channels=(32, 64, 128, 256, 512),
-        strides=(2, 2, 2, 2),
-        num_res_units=2
-    ).to(device)
+    model = get_model(config, device)
 
     # 4. Load trained weights safely
     if not os.path.exists(model_path):
@@ -68,8 +53,8 @@ def main():
             inputs, labels = batch_data["image"].to(device), batch_data["label"].to(device)
             
             print(f"Running inference on volume {i+1}...")
-            roi_size = (128, 128, 128)
-            sw_batch_size = 4
+            roi_size = tuple(config["validation"]["roi_size"])
+            sw_batch_size = config["validation"]["sw_batch_size"]
             outputs = sliding_window_inference(inputs, roi_size, sw_batch_size, model)
             
             # Convert raw logits to concrete class predictions (0 or 1) via Argmax
@@ -119,6 +104,7 @@ def main():
             print(f"Saved visualization panel to {save_path}")
 
     print("\nVisualization generation complete. Check the './visualizations' directory!")
+
 
 if __name__ == "__main__":
     main()
