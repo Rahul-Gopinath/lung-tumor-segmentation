@@ -7,8 +7,8 @@ import torch
 from monai.data import DataLoader
 from monai.inferers import sliding_window_inference
 
-from model import *
-from data_utils import *
+from src.model import *
+from src.data_utils import *
 
 def main():
 
@@ -43,7 +43,7 @@ def main():
     print("Model weights loaded successfully.")
 
     # 5. Run inference on the first few samples
-    num_images_to_save = 3
+    num_images_to_save = 10
     
     with torch.no_grad():
         for i, batch_data in enumerate(val_dataloader):
@@ -53,8 +53,8 @@ def main():
             inputs, labels = batch_data["image"].to(device), batch_data["label"].to(device)
             
             print(f"Running inference on volume {i+1}...")
-            roi_size = tuple(config["validation"]["roi_size"])
-            sw_batch_size = config["validation"]["sw_batch_size"]
+            roi_size = tuple(config["training"]["roi_size"])
+            sw_batch_size = config["training"]["sw_batch_size"]
             outputs = sliding_window_inference(inputs, roi_size, sw_batch_size, model)
             
             # Convert raw logits to concrete class predictions (0 or 1) via Argmax

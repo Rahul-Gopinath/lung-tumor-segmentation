@@ -14,8 +14,8 @@ from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric
 from monai.inferers import sliding_window_inference
 
-from model import *
-from data_utils import *
+from src.model import *
+from src.data_utils import *
 
 
 def train(config, device, model_dir, writer):
@@ -42,7 +42,7 @@ def train(config, device, model_dir, writer):
     post_pred = Compose([AsDiscrete(argmax=True, to_onehot=2)])
     post_label = Compose([AsDiscrete(to_onehot=2)])
 
-    val_interval = config["training"]["val_interval_epochs"]
+    val_interval = config["training"]["val_interval"]
     best_metric = -1
     best_metric_epoch = -1
 
@@ -76,8 +76,8 @@ def train(config, device, model_dir, writer):
                 for val_data in val_dataloader:
                     val_inputs, val_labels = val_data["image"].to(device), val_data["label"].to(device)
                     
-                    roi_size = tuple(config["validation"]["roi_size"])
-                    sw_batch_size = config["validation"]["sw_batch_size"]
+                    roi_size = tuple(config["training"]["roi_size"])
+                    sw_batch_size = config["training"]["sw_batch_size"]
                     val_outputs = sliding_window_inference(
                         val_inputs, roi_size, sw_batch_size, model
                     )

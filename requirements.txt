@@ -9,3 +9,4 @@ requests
 nibabel
 itk
 tensorboard
+pyyaml
