@@ -10,3 +10,4 @@ nibabel
 itk
 tensorboard
 pyyaml
+streamlit
