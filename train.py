@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 import gc
+import yaml
 import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -28,11 +29,14 @@ from monai.inferers import sliding_window_inference
 def main():
     print("Train start")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    with open("config/config.yaml", "r") as f:
+        config = yaml.safe_load(f)
+
+    device = torch.device(config["device"] if torch.cuda.is_available() else "cpu")
     print(f"Using training device: {device}")
 
-    data_dir = "./data"
-    model_dir = "./models"
+    data_dir = config["paths"]["data_dir"]
+    model_dir = config["paths"]["model_dir"]
     os.makedirs(model_dir, exist_ok=True)
     
     train_transforms = Compose([
@@ -40,16 +44,16 @@ def main():
         EnsureChannelFirstd(keys=["image", "label"]),
         NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=["bilinear", "nearest"]),
-        RandRotated(keys=["image", "label"], range_x=15, range_y=15, range_z=15, prob=0.5, mode=["bilinear", "nearest"]),
-        RandFlipd(keys=["image", "label"], spatial_axis=[0, 1, 2], prob=0.5),
+        RandRotated(keys=["image", "label"], range_x=config["transforms"]["rotation_range_degrees"], range_y=config["transforms"]["rotation_range_degrees"], range_z=config["transforms"]["rotation_range_degrees"], prob=config["transforms"]["rotation_prob"], mode=["bilinear", "nearest"]),
+        RandFlipd(keys=["image", "label"], spatial_axis=[0, 1, 2], prob=config["transforms"]["flip_prob"]),
         # Crops a clean 64x64x64 patch centered around positive (tumor) or negative tissue
         RandCropByPosNegLabeld(
             keys=["image", "label"], 
             label_key="label", 
-            spatial_size=(128, 128, 128), 
-            pos=3, 
-            neg=1, 
-            num_samples=4 # Better try higher values for this reason - By increasing num_samples,
+            spatial_size=tuple(config["transforms"]["spatial_size"]), 
+            pos=config["transforms"]["pos_sample_ratio"], 
+            neg=config["transforms"]["neg_sample_ratio"], 
+            num_samples=config["transforms"]["num_samples_per_volume"] # Better try higher values for this reason - By increasing num_samples,
                         # you are extracting maximum value out of a single disk-read operation, 
                         # drastically reducing data loading bottlenecks.
         )
@@ -60,66 +64,45 @@ def main():
         EnsureChannelFirstd(keys=["image", "label"]),
         NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=["bilinear", "nearest"])])
-    
-    # train_dataset = DecathlonDataset(
-    #     root_dir=data_dir,
-    #     task="Task06_Lung",
-    #     section="training",
-    #     transform=train_transforms,
-    #     download=False,
-    #     cache_rate=1.0
-    # )
-
-    # train_dataloader = DataLoader(train_dataset, batch_size=1, num_workers=4, shuffle=True)
 
     train_dataset = CacheDataset(
-        data=DecathlonDataset(root_dir=data_dir, task="Task06_Lung", section="training", download=False).data,
+        data=DecathlonDataset(root_dir=data_dir, task=config["data"]["task"], section="training", download=False).data,
         transform=train_transforms,
-        cache_rate=1.0, # Cache 100% of the training set in system RAM
-        num_workers=4
+        cache_rate=config["data"]["cache_rate"], # Cache 100% of the training set in system RAM
+        num_workers=config["data"]["num_workers_train"]
     )
 
     train_dataloader = DataLoader(train_dataset, batch_size=1, num_workers=0, shuffle=True)
 
-    # val_dataset = DecathlonDataset(
-    #     root_dir=data_dir, 
-    #     task="Task06_Lung", 
-    #     section="validation", 
-    #     transform=val_transforms, 
-    #     download=False, 
-    #     cache_rate=1.0
-    # )
-    # val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=2)
-
     val_dataset = CacheDataset(
-        data=DecathlonDataset(root_dir=data_dir, task="Task06_Lung", section="validation", download=False).data,
+        data=DecathlonDataset(root_dir=data_dir, task=config["data"]["task"], section="validation", download=False).data,
         transform=val_transforms,
-        cache_rate=1.0,  # Cache 100% of validation scans in RAM
-        num_workers=2
+        cache_rate=config["data"]["cache_rate"],  # Cache 100% of validation scans in RAM
+        num_workers=config["data"]["num_workers_val"]
     )
     val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=0)
 
     # TensorBoard Logging Setup
     folder_id = "%s" % (datetime.now().strftime("%Y%m%d-%H%M%S"))
-    writer = SummaryWriter(log_dir=os.path.join("./runs/lung_tumor_experiment", folder_id))
+    writer = SummaryWriter(log_dir=os.path.join(config["paths"]["log_dir"], folder_id))
 
-    model = UNet(spatial_dims=3,
-                 in_channels=1,
-                 out_channels=2,
-                 channels=(32, 64, 128, 256, 512),
-                 strides=(2, 2, 2, 2),
-                 num_res_units=2).to(device)
-    
-    max_epochs = 150
+    model = UNet(spatial_dims=config["model"]["spatial_dims"],
+                 in_channels=config["model"]["in_channels"],
+                 out_channels=config["model"]["out_channels"],
+                 channels=tuple(config["model"]["channels"]),
+                 strides=tuple(config["model"]["strides"]),
+                 num_res_units=config["model"]["num_res_units"]).to(device)
+
+    max_epochs = config["training"]["max_epochs"]
     loss_function = DiceCELoss(to_onehot_y=True, softmax=True, include_background=False)
-    optimizer = Adam(model.parameters(), lr=3e-4, weight_decay=1e-5)
-    scheduler = CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=1e-6)
+    optimizer = Adam(model.parameters(), lr=config["training"]["learning_rate"], weight_decay=config["training"]["weight_decay"])
+    scheduler = CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=config["training"]["learning_rate"] * 0.1)
     dice_metric = DiceMetric(include_background=False, reduction="mean")
 
     post_pred = Compose([AsDiscrete(argmax=True, to_onehot=2)])
     post_label = Compose([AsDiscrete(to_onehot=2)])
 
-    val_interval = 5
+    val_interval = config["training"]["val_interval_epochs"]
     best_metric = -1
     best_metric_epoch = -1
 
@@ -153,8 +136,8 @@ def main():
                 for val_data in val_dataloader:
                     val_inputs, val_labels = val_data["image"].to(device), val_data["label"].to(device)
                     
-                    roi_size = (128, 128, 128)
-                    sw_batch_size = 4
+                    roi_size = tuple(config["validation"]["roi_size"])
+                    sw_batch_size = config["validation"]["sw_batch_size"]
                     val_outputs = sliding_window_inference(
                         val_inputs, roi_size, sw_batch_size, model
                     )

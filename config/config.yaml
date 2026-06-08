@@ -1,0 +1,44 @@
+# General Setup
+device: "cuda"          # Options: "cuda" or "cpu"
+
+# Path Directories
+paths:
+  data_dir: "./data"
+  model_dir: "./models"
+  log_dir: "./runs/lung_tumor_experiment"
+
+# Dataset and Transform Configurations
+data:
+  task: "Task06_Lung"
+  cache_rate: 1.0
+  num_workers_train: 4
+  num_workers_val: 2
+
+transforms:
+  spatial_size: [128, 128, 128]   # Patch size cropped out of the 3D scan
+  pos_sample_ratio: 3             # Relative weight to sample patches containing tumors
+  neg_sample_ratio: 1             # Relative weight to sample background/healthy tissue
+  num_samples_per_volume: 4       # Number of patches extracted per disk read
+  rotation_range_degrees: 15
+  flip_prob: 0.5
+  rotation_prob: 0.5
+
+# Neural Network Architecture Details
+model:
+  architecture: "UNet"   # Ready to scale to "SegResNet" in V2
+  spatial_dims: 3
+  in_channels: 1
+  out_channels: 2
+  channels: [32, 64, 128, 256, 512]
+  strides: [2, 2, 2, 2]
+  num_res_units: 2
+
+# Optimization Parameters
+training:
+  max_epochs: 150
+  batch_size: 1          # DecathlonDataset processes 1 patient volume at a time
+  learning_rate: 0.0003  # 3e-4
+  weight_decay: 0.00001  # 1e-5
+  val_interval: 5        # Run validation every N epochs
+  roi_size: [128, 128, 128] # Sliding window inference patch size
+  sw_batch_size: 4       # Parallel patches processed by sliding window
