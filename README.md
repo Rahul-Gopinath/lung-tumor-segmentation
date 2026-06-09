@@ -17,6 +17,7 @@ What works: Looking at the 2D cross-section plots, the model safely finds the ce
 
 The Problem: The overall 3D score is low because the model misses the very top and bottom edges of the 3D tumor volume. It struggles where the tumor fades out.
 
-Next Steps: 
+Next Steps:
+- Explore better alternatives to the existent dice loss metric that doesn't cater to class imbalances.
 - Feed the network more tumor patches during training \(num_samples\) to fix data imbalance.
 - Upgrade from standard UNet to a better model to capture 3D edges.
