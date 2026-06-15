@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
 
 from monai.data import DataLoader, decollate_batch
-from monai.losses import DiceCELoss
+from monai.losses import DiceCELoss, GeneralizedDiceFocalLoss
 from monai.metrics import DiceMetric
 from monai.inferers import sliding_window_inference
 
@@ -34,7 +34,14 @@ def train(config, device, model_dir, writer):
     model = get_model(config, device)
 
     max_epochs = config["training"]["max_epochs"]
-    loss_function = DiceCELoss(to_onehot_y=True, softmax=True, include_background=False)
+    #loss_function = DiceCELoss(to_onehot_y=True, softmax=True, include_background=False)
+    loss_function = GeneralizedDiceFocalLoss(
+        to_onehot_y=True,
+        include_background=False,
+        softmax=True,
+        lambda_gdl=1.0,
+        lambda_focal=1.0
+    )
     optimizer = Adam(model.parameters(), lr=config["training"]["learning_rate"], weight_decay=config["training"]["weight_decay"])
     scheduler = CosineAnnealingLR(optimizer, T_max=max_epochs, eta_min=config["training"]["learning_rate"] * 0.1)
     dice_metric = DiceMetric(include_background=False, reduction="mean")

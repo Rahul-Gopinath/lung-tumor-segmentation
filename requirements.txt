@@ -11,3 +11,4 @@ itk
 tensorboard
 pyyaml
 streamlit
+tqdm
