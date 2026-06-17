@@ -9,3 +9,6 @@ requests
 nibabel
 itk
 tensorboard
+pyyaml
+streamlit
+tqdm
