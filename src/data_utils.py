@@ -4,7 +4,8 @@ from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.transforms import (
     Compose, 
     LoadImaged, 
-    EnsureChannelFirstd, 
+    EnsureChannelFirstd,
+    ScaleIntensityRanged,
     NormalizeIntensityd, 
     Spacingd,
     RandRotated,
@@ -18,6 +19,7 @@ def define_train_transform(config):
     train_transforms = Compose([
         LoadImaged(keys=["image", "label"]),
         EnsureChannelFirstd(keys=["image", "label"]),
+        ScaleIntensityRanged(keys=["image"], a_min=-1000.0, a_max=400.0, b_min=0.0, b_max=1.0, clip=True),
         NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         Spacingd(keys=["image", "label"], pixdim=(1.0, 1.0, 1.0), mode=["bilinear", "nearest"]),
         RandRotated(keys=["image", "label"], range_x=config["transforms"]["rotation_range_degrees"], range_y=config["transforms"]["rotation_range_degrees"], range_z=config["transforms"]["rotation_range_degrees"], prob=config["transforms"]["rotation_prob"], mode=["bilinear", "nearest"]),

@@ -19,7 +19,7 @@ transforms:
   spatial_size: [128, 128, 128]   # Patch size cropped out of the 3D scan
   pos_sample_ratio: 1             # Relative weight to sample patches containing tumors
   neg_sample_ratio: 1             # Relative weight to sample background/healthy tissue
-  num_samples_per_volume: 4       # Number of patches extracted per disk read
+  num_samples_per_volume: 12       # Number of patches extracted per disk read
   rotation_range_degrees: 15
   flip_prob: 0.5
   rotation_prob: 0.5

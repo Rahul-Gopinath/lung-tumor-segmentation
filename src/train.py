@@ -37,7 +37,7 @@ def train(config, device, model_dir, writer):
     #loss_function = DiceCELoss(to_onehot_y=True, softmax=True, include_background=False)
     loss_function = GeneralizedDiceFocalLoss(
         to_onehot_y=True,
-        include_background=False,
+        include_background=True,
         softmax=True,
         lambda_gdl=1.0,
         lambda_focal=1.0
